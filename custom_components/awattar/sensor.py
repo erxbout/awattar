@@ -35,7 +35,7 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
         native_unit_of_measurement=f"{CURRENCY_EURO}/{UnitOfEnergy.KILO_WATT_HOUR}",
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=5,
-        name="PVPC",
+        name="Awattar",
     ),
     SensorEntityDescription(
         key=KEY_INJECTION,
