@@ -21,7 +21,6 @@ import async_timeout
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
-<<<<<<< HEAD
 PARALLEL_UPDATES = 1
 SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(
@@ -59,7 +58,6 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
         entity_registry_enabled_default=False,
     ),
 )
-=======
 
 apiEndpoint = "https://api.awattar.at/v1/marketdata"
 _PRICE_SENSOR_ATTRIBUTES_MAP = {
@@ -282,7 +280,7 @@ class AwattarSensor(CoordinatorEntity, SensorEntity):
                 currentKeyPrefix = tomorrowKeyPrefix
 
             if currentKey == endKeyTomorrow:
-                break)
+                break
 
         print("Updated price data to")
         print(_PRICE_SENSOR_ATTRIBUTES_MAP)
