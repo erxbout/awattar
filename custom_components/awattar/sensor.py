@@ -1,32 +1,27 @@
-"""Sensor to collect the reference daily prices of electricity ('PVPC') in Spain."""
-from __future__ import annotations
+import requests
 
-from collections.abc import Mapping
-from datetime import datetime
-import logging
-from typing import Any
-
-from aiopvpc.const import KEY_INJECTION, KEY_MAG, KEY_OMIE, KEY_PVPC
-
-from homeassistant.components.sensor import (
-    SensorEntity,
-    SensorEntityDescription,
-    SensorStateClass,
-)
+from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CURRENCY_EURO, UnitOfEnergy
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_track_time_change
-from homeassistant.helpers.typing import StateType
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity, StateType
 
-from . import ElecPricesDataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+    DataUpdateCoordinator,
+    UpdateFailed,
+)
+from homeassistant.core import callback
+from homeassistant.exceptions import ConfigEntryAuthFailed
+
+from decimal import Decimal
+from datetime import timedelta, date, datetime
+import logging
+
+import async_timeout
 from .const import DOMAIN
-from .helpers import make_sensor_unique_id
 
 _LOGGER = logging.getLogger(__name__)
+<<<<<<< HEAD
 PARALLEL_UPDATES = 1
 SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(
@@ -64,6 +59,9 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
         entity_registry_enabled_default=False,
     ),
 )
+=======
+
+apiEndpoint = "https://api.awattar.at/v1/marketdata"
 _PRICE_SENSOR_ATTRIBUTES_MAP = {
     "data_id": "data_id",
     "name": "data_name",
@@ -145,95 +143,171 @@ _PRICE_SENSOR_ATTRIBUTES_MAP = {
     "price_next_day_23h": "price_next_day_23h",
 }
 
+async def async_setup_platform(
+    hass: HomeAssistant, async_add_entities: AddEntitiesCallback
+) -> None:
+    async_add_entities(EnergyProductionSensor(), True)
+
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the electricity price sensor from config_entry."""
-    coordinator: ElecPricesDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
-    sensors = [ElecPriceSensor(coordinator, SENSOR_TYPES[0], entry.unique_id)]
-    if coordinator.api.using_private_api:
-        for sensor_desc in SENSOR_TYPES[1:]:
-            sensors.append(ElecPriceSensor(coordinator, sensor_desc, entry.unique_id))
-    async_add_entities(sensors)
+    coordinator = MyCoordinator(hass, apiEndpoint, config_entry.data["PollingInterval"])
+
+    await coordinator.async_config_entry_first_refresh()
+
+    entities = []
+
+    entities.append(AwattarSensor(coordinator))
+    async_add_entities(entities)
 
 
-class ElecPriceSensor(CoordinatorEntity[ElecPricesDataUpdateCoordinator], SensorEntity):
-    """Class to hold the prices of electricity as a sensor."""
+class MyCoordinator(DataUpdateCoordinator):
+    """My custom coordinator."""
 
-    _attr_has_entity_name = True
-
-    def __init__(
-        self,
-        coordinator: ElecPricesDataUpdateCoordinator,
-        description: SensorEntityDescription,
-        unique_id: str | None,
-    ) -> None:
-        """Initialize ESIOS sensor."""
-        super().__init__(coordinator)
-        self.entity_description = description
-        self._attr_attribution = coordinator.api.attribution
-        self._attr_unique_id = make_sensor_unique_id(unique_id, description.key)
-        self._attr_device_info = DeviceInfo(
-            configuration_url="https://api.esios.ree.es",
-            entry_type=DeviceEntryType.SERVICE,
-            identifiers={(DOMAIN, coordinator.entry_id)},
-            manufacturer="REE",
-            name="ESIOS",
+    def __init__(self, hass, apiEndpoint, pollingInterval):
+        """Initialize my coordinator."""
+        super().__init__(
+            hass,
+            # Name of the data. For logging purposes.
+            _LOGGER,
+            name="My sensor",
+            # Polling interval. Will only be polled if there are subscribers.
+            update_interval=timedelta(minutes=pollingInterval),
         )
+        self.apiEndpoint = apiEndpoint
+        self.hass = hass
 
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return self.coordinator.data.availability.get(
-            self.entity_description.key, False
-        )
+    async def _async_update_data(self):
+        """Fetch data from API endpoint.
 
-    async def async_added_to_hass(self) -> None:
-        """Handle entity which will be added."""
-        await super().async_added_to_hass()
-        # Enable API downloads for this sensor
-        self.coordinator.api.update_active_sensors(self.entity_description.key, True)
-        self.async_on_remove(
-            lambda: self.coordinator.api.update_active_sensors(
-                self.entity_description.key, False
-            )
-        )
+        This is the place to pre-process the data to lookup tables
+        so entities can quickly look up their data.
+        """
+        try:
+            # Note: asyncio.TimeoutError and aiohttp.ClientError are already
+            # handled by the data update coordinator.
+            async with async_timeout.timeout(10):
+                # Grab active context variables to limit data required to be fetched from API
+                # Note: using context is not required if there is no need or ability to limit
+                # data retrieved from API.
+                listening_idx = set(self.async_contexts())
+                return await self.hass.async_add_executor_job(self.update)
+        # except ApiAuthError as err:
+        # Raising ConfigEntryAuthFailed will cancel future updates
+        # and start a config flow with SOURCE_REAUTH (async_step_reauth)
+        # raise ConfigEntryAuthFailed from err
+        # except ApiError as err:
+        # raise UpdateFailed(f"Error communicating with API: {err}")
+        finally:
+            print("finally hi")
 
-        # Update 'state' value in hour changes
-        self.async_on_remove(
-            async_track_time_change(
-                self.hass, self.update_current_price, second=[0], minute=[0]
-            )
-        )
-        _LOGGER.debug(
-            "Setup of ESIOS sensor %s (%s, unique_id: %s)",
-            self.entity_description.key,
-            self.entity_id,
-            self._attr_unique_id,
-        )
+    def fetch_data(api_url, start_timestamp, end_timestamp):
+        params = {
+            'start': start_timestamp,
+            'end': end_timestamp,
+        }
+
+        try:
+            response = requests.get(api_url, params=params)
+            # Check if the request was successful (status code 200)
+            if response.status_code == 200:
+                # Parse the JSON data
+                json_data = response.json()
+                return json_data
+            else:
+                print(f"Failed to fetch data. Status code: {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            return None
+
+    def update(self) -> None:
+        startOfToday = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        endOfTomorrow = datetime.combine(startOfToday + timedelta(days=2), datetime.min.time())
+
+        data = fetch_data(api_url, startOfToday.timestamp()*1000, endOfTomorrow.timestamp()*1000)
+
+        return data
+
+
+class AwattarSensor(CoordinatorEntity, SensorEntity):
+    """An entity using CoordinatorEntity.
+
+    The CoordinatorEntity class provides:
+      should_poll
+      async_update
+      async_added_to_hass
+      available
+
+    """
+
+    timestamp: StateType | date | datetime | Decimal = None
+
+    def __init__(self, coordinator):
+        """Pass coordinator to CoordinatorEntity."""
+        super().__init__(coordinator, context="awattar")
+        self._name = "Awattar"
+        self._state = 0
 
     @callback
-    def update_current_price(self, now: datetime) -> None:
-        """Update the sensor state, by selecting the current price for this hour."""
-        self.coordinator.api.process_state_and_attributes(
-            self.coordinator.data, self.entity_description.key, now
-        )
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        updateDone = False
+
+        data = self.coordinator.data
+
+        print("Fetched data:", data)
+
+        timestamps_ms = [entry['start_timestamp'] for entry in data['data']]
+        # Convert each timestamp and print the results
+        currentKeyPrefix = "price_"
+        tomorrowKeyPrefix = "price_next_day_"
+        currentKey = "price_00h"
+        endKeyToday = "price_23h"
+        endKeyTomorrow = "price_next_day_23h"
+        for dat in data['data']:
+            converted_timestamp = datetime.fromtimestamp(dat['start_timestamp'] / 1000)
+            converted_endtimestamp = datetime.fromtimestamp(dat['end_timestamp'] / 1000)
+            converted_price = round(dat['marketprice'] / 10, 3)
+            currentKey = currentKeyPrefix + converted_timestamp.strftime("%H") + "h"
+            _PRICE_SENSOR_ATTRIBUTES_MAP[currentKey] = converted_price
+
+            if converted_timestamp <= datetime.now() <= converted_endtimestamp:
+                self._state = converted_price
+
+            if currentKey == endKeyToday:
+                currentKeyPrefix = tomorrowKeyPrefix
+
+            if currentKey == endKeyTomorrow:
+                break)
+
+        print("Updated price data to")
+        print(_PRICE_SENSOR_ATTRIBUTES_MAP)
+
         self.async_write_ha_state()
 
     @property
-    def native_value(self) -> StateType:
-        """Return the state of the sensor."""
-        return self.coordinator.api.states.get(self.entity_description.key)
+    def name(self):
+        """Return the name of the sensor."""
+        return self._name
 
     @property
-    def extra_state_attributes(self) -> Mapping[str, Any]:
-        """Return the state attributes."""
-        sensor_attributes = self.coordinator.api.sensor_attributes.get(
-            self.entity_description.key, {}
-        )
-        return {
-            _PRICE_SENSOR_ATTRIBUTES_MAP[key]: value
-            for key, value in sensor_attributes.items()
-            if key in _PRICE_SENSOR_ATTRIBUTES_MAP
-        }
+    def state(self):
+        """Return the name of the sensor."""
+        return self._state
+
+    @property
+    def extra_state_attributes(self):
+        """Return the name of the sensor."""
+        return _PRICE_SENSOR_ATTRIBUTES_MAP
+
+    @property
+    def native_unit_of_measurement(self):
+        return "ct/kWh"
+
+    @property
+    def suggested_display_precision(self):
+        return 2
