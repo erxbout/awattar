@@ -1,4 +1,4 @@
-"""Config flow for energygvat integration."""
+"""Config flow for awattar integration."""
 from __future__ import annotations
 
 import logging
@@ -15,6 +15,7 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect.
 
@@ -22,11 +23,11 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     """
 
     # Return info that you want to store in the config entry.
-    return {"title": "Awattar Price Info"}
+    return {"title": "AwattarPriceInfo"}
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for energygvat."""
+    """Handle a config flow for awattar."""
 
     VERSION = 1
 

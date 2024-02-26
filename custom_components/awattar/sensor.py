@@ -1,63 +1,61 @@
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+import logging
+
+import async_timeout
 import requests
 
-from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity, StateType
-
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
     UpdateFailed,
 )
-from homeassistant.core import callback
-from homeassistant.exceptions import ConfigEntryAuthFailed
 
-from decimal import Decimal
-from datetime import timedelta, date, datetime
-import logging
-
-import async_timeout
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 1
-SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
-    SensorEntityDescription(
-        key=KEY_PVPC,
-        icon="mdi:currency-eur",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{UnitOfEnergy.KILO_WATT_HOUR}",
-        state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=5,
-        name="Awattar",
-    ),
-    SensorEntityDescription(
-        key=KEY_INJECTION,
-        icon="mdi:transmission-tower-export",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{UnitOfEnergy.KILO_WATT_HOUR}",
-        state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=5,
-        name="Injection Price",
-    ),
-    SensorEntityDescription(
-        key=KEY_MAG,
-        icon="mdi:bank-transfer",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{UnitOfEnergy.KILO_WATT_HOUR}",
-        state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=5,
-        name="MAG tax",
-        entity_registry_enabled_default=False,
-    ),
-    SensorEntityDescription(
-        key=KEY_OMIE,
-        icon="mdi:shopping",
-        native_unit_of_measurement=f"{CURRENCY_EURO}/{UnitOfEnergy.KILO_WATT_HOUR}",
-        state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=5,
-        name="OMIE Price",
-        entity_registry_enabled_default=False,
-    ),
-)
+# SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
+#     SensorEntityDescription(
+#         key=KEY_PVPC,
+#         icon="mdi:currency-eur",
+#         native_unit_of_measurement=f"{CURRENCY_EURO}/{UnitOfEnergy.KILO_WATT_HOUR}",
+#         state_class=SensorStateClass.MEASUREMENT,
+#         suggested_display_precision=5,
+#         name="Awattar",
+#     ),
+#     SensorEntityDescription(
+#         key=KEY_INJECTION,
+#         icon="mdi:transmission-tower-export",
+#         native_unit_of_measurement=f"{CURRENCY_EURO}/{UnitOfEnergy.KILO_WATT_HOUR}",
+#         state_class=SensorStateClass.MEASUREMENT,
+#         suggested_display_precision=5,
+#         name="Injection Price",
+#     ),
+#     SensorEntityDescription(
+#         key=KEY_MAG,
+#         icon="mdi:bank-transfer",
+#         native_unit_of_measurement=f"{CURRENCY_EURO}/{UnitOfEnergy.KILO_WATT_HOUR}",
+#         state_class=SensorStateClass.MEASUREMENT,
+#         suggested_display_precision=5,
+#         name="MAG tax",
+#         entity_registry_enabled_default=False,
+#     ),
+#     SensorEntityDescription(
+#         key=KEY_OMIE,
+#         icon="mdi:shopping",
+#         native_unit_of_measurement=f"{CURRENCY_EURO}/{UnitOfEnergy.KILO_WATT_HOUR}",
+#         state_class=SensorStateClass.MEASUREMENT,
+#         suggested_display_precision=5,
+#         name="OMIE Price",
+#         entity_registry_enabled_default=False,
+#     ),
+# )
 
 apiEndpoint = "https://api.awattar.at/v1/marketdata"
 _PRICE_SENSOR_ATTRIBUTES_MAP = {
@@ -141,6 +139,7 @@ _PRICE_SENSOR_ATTRIBUTES_MAP = {
     "price_next_day_23h": "price_next_day_23h",
 }
 
+
 async def async_setup_platform(
     hass: HomeAssistant, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -202,31 +201,39 @@ class MyCoordinator(DataUpdateCoordinator):
         finally:
             print("finally hi")
 
-    def fetch_data(api_url, start_timestamp, end_timestamp):
-        params = {
-            'start': start_timestamp,
-            'end': end_timestamp,
-        }
-
-        try:
-            response = requests.get(api_url, params=params)
-            # Check if the request was successful (status code 200)
-            if response.status_code == 200:
-                # Parse the JSON data
-                json_data = response.json()
-                return json_data
-            else:
-                print(f"Failed to fetch data. Status code: {response.status_code}")
-                return None
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            return None
-
     def update(self) -> None:
-        startOfToday = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        endOfTomorrow = datetime.combine(startOfToday + timedelta(days=2), datetime.min.time())
+        startOfToday = datetime.utcnow().replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        endOfTomorrow = datetime.combine(
+            startOfToday + timedelta(days=2), datetime.min.time()
+        )
 
-        data = fetch_data(api_url, startOfToday.timestamp()*1000, endOfTomorrow.timestamp()*1000)
+        def fetch_data(api_url, start_timestamp, end_timestamp):
+            params = {
+                "start": start_timestamp,
+                "end": end_timestamp,
+            }
+
+            try:
+                response = requests.get(api_url, params=params)
+                # Check if the request was successful (status code 200)
+                if response.status_code == 200:
+                    # Parse the JSON data
+                    json_data = response.json()
+                    return json_data
+                else:
+                    print(f"Failed to fetch data. Status code: {response.status_code}")
+                    return None
+            except Exception as e:
+                print(f"An error occurred: {e}")
+                return None
+
+        data = fetch_data(
+            apiEndpoint,
+            startOfToday.timestamp() * 1000,
+            endOfTomorrow.timestamp() * 1000,
+        )
 
         return data
 
@@ -259,17 +266,17 @@ class AwattarSensor(CoordinatorEntity, SensorEntity):
 
         print("Fetched data:", data)
 
-        timestamps_ms = [entry['start_timestamp'] for entry in data['data']]
+        timestamps_ms = [entry["start_timestamp"] for entry in data["data"]]
         # Convert each timestamp and print the results
         currentKeyPrefix = "price_"
         tomorrowKeyPrefix = "price_next_day_"
         currentKey = "price_00h"
         endKeyToday = "price_23h"
         endKeyTomorrow = "price_next_day_23h"
-        for dat in data['data']:
-            converted_timestamp = datetime.fromtimestamp(dat['start_timestamp'] / 1000)
-            converted_endtimestamp = datetime.fromtimestamp(dat['end_timestamp'] / 1000)
-            converted_price = round(dat['marketprice'] / 10, 3)
+        for dat in data["data"]:
+            converted_timestamp = datetime.fromtimestamp(dat["start_timestamp"] / 1000)
+            converted_endtimestamp = datetime.fromtimestamp(dat["end_timestamp"] / 1000)
+            converted_price = round(dat["marketprice"] / 10, 3)
             currentKey = currentKeyPrefix + converted_timestamp.strftime("%H") + "h"
             _PRICE_SENSOR_ATTRIBUTES_MAP[currentKey] = converted_price
 
