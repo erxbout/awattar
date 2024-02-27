@@ -59,13 +59,13 @@ PARALLEL_UPDATES = 1
 
 apiEndpoint = "https://api.awattar.at/v1/marketdata"
 _PRICE_SENSOR_ATTRIBUTES_MAP = {
-    "data_id": "data_id",
-    "name": "data_name",
-    "tariff": "tariff",
+    "data_id": "1002",
+    "name": "Awattar",
+    "tariff": "hourly",
     "period": "period",
     "available_power": "available_power",
     "next_period": "next_period",
-    "hours_to_next_period": "hours_to_next_period",
+    "hours_to_next_period": "1",
     "next_better_price": "next_better_price",
     "hours_to_better_price": "hours_to_better_price",
     "num_better_prices_ahead": "num_better_prices_ahead",
@@ -79,7 +79,6 @@ _PRICE_SENSOR_ATTRIBUTES_MAP = {
     "price_00h": "price_00h",
     "price_01h": "price_01h",
     "price_02h": "price_02h",
-    "price_02h_d": "price_02h_d",  # only on DST day change with 25h
     "price_03h": "price_03h",
     "price_04h": "price_04h",
     "price_05h": "price_05h",
@@ -115,7 +114,6 @@ _PRICE_SENSOR_ATTRIBUTES_MAP = {
     "price_next_day_00h": "price_next_day_00h",
     "price_next_day_01h": "price_next_day_01h",
     "price_next_day_02h": "price_next_day_02h",
-    "price_next_day_02h_d": "price_next_day_02h_d",
     "price_next_day_03h": "price_next_day_03h",
     "price_next_day_04h": "price_next_day_04h",
     "price_next_day_05h": "price_next_day_05h",
@@ -260,13 +258,10 @@ class AwattarSensor(CoordinatorEntity, SensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        updateDone = False
-
         data = self.coordinator.data
 
         print("Fetched data:", data)
 
-        timestamps_ms = [entry["start_timestamp"] for entry in data["data"]]
         # Convert each timestamp and print the results
         currentKeyPrefix = "price_"
         tomorrowKeyPrefix = "price_next_day_"
@@ -282,6 +277,12 @@ class AwattarSensor(CoordinatorEntity, SensorEntity):
 
             if converted_timestamp <= datetime.now() <= converted_endtimestamp:
                 self._state = converted_price
+                _PRICE_SENSOR_ATTRIBUTES_MAP["period"] = currentKey
+                _PRICE_SENSOR_ATTRIBUTES_MAP["next_period"] = (
+                    currentKeyPrefix
+                    + (converted_timestamp + timedelta(hours=1)).strftime("%H")
+                    + "h"
+                )
 
             if currentKey == endKeyToday:
                 currentKeyPrefix = tomorrowKeyPrefix
