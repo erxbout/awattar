@@ -262,12 +262,21 @@ class AwattarSensor(CoordinatorEntity, SensorEntity):
 
         print("Fetched data:", data)
 
+        currentKeyPrefix = "price_next_day_"
+        currentKey = "price_next_day_00h"
+
+        for i in range(24):
+            currentKey = currentKeyPrefix + f"{i:02}" + "h"
+            print(currentKey)
+            # reset tomorrow data because if its filled from yesterday it does not get filled with new data (or in other words stays filled with same data)
+            _PRICE_SENSOR_ATTRIBUTES_MAP[currentKey] = currentKey
+
         # Convert each timestamp and print the results
         currentKeyPrefix = "price_"
-        tomorrowKeyPrefix = "price_next_day_"
         currentKey = "price_00h"
         endKeyToday = "price_23h"
         endKeyTomorrow = "price_next_day_23h"
+        tomorrowKeyPrefix = "price_next_day_"
         for dat in data["data"]:
             converted_timestamp = datetime.fromtimestamp(dat["start_timestamp"] / 1000)
             converted_endtimestamp = datetime.fromtimestamp(dat["end_timestamp"] / 1000)
